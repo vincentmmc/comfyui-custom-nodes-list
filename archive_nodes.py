@@ -81,7 +81,7 @@ class CustomNodesArchive:
             try:
                 entries = os.scandir(directory)
             except OSError as exc:
-                report['errors'].append({'path': str(directory.relative_to(root)), 'error': str(exc)})
+                report['errors'].append({'path': prefix + '/' + directory.relative_to(root).as_posix(), 'error': str(exc)})
                 return
             with entries:
                 for entry in entries:
@@ -92,7 +92,12 @@ class CustomNodesArchive:
                     relative = path.relative_to(root).as_posix()
                     archive_name = prefix + '/' + relative
                     try:
-                        info = path.lstat()
+                        try:
+                            info = path.lstat()
+                        except FileNotFoundError as exc:
+                            report['errors'].append({'path': archive_name,
+                                                     'reason': 'disappeared before stat', 'error': str(exc)})
+                            continue
                         reason = None
                         if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
                             reason = 'symlink/reparse point'
@@ -117,7 +122,14 @@ class CustomNodesArchive:
                         if report['source_bytes'] + info.st_size > total_limit:
                             raise ValueError('文件总大小超过 max_total_mb；已停止并删除未完成的 ZIP，请提高上限后重试。')
                         # Refuse leaf symlink replacement on platforms supporting O_NOFOLLOW.
-                        src_fd = os.open(path, os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0))
+                        try:
+                            src_fd = os.open(path, os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0))
+                        except FileNotFoundError as exc:
+                            # No ZIP entry has been opened yet, so skipping cannot
+                            # leave an empty/partial file masquerading as a backup.
+                            report['errors'].append({'path': archive_name,
+                                                     'reason': 'disappeared before open', 'error': str(exc)})
+                            continue
                         with os.fdopen(src_fd, 'rb') as source:
                             opened = os.fstat(source.fileno())
                             if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
@@ -153,7 +165,7 @@ class CustomNodesArchive:
             raise
         query = urlencode({'filename': filename, 'type': 'output'})
         message = (f"已打包 {report['files']} 个文件，原始大小 {report['source_bytes'] / 1024**2:.1f} MiB。\n"
-                   f"排除 {len(report['excluded'])} 项；无法遍历的目录 {len(report['errors'])} 个。\n"
+                   f"排除 {len(report['excluded'])} 项；缺失或无法访问的文件/目录 {len(report['errors'])} 项。\n"
                    '详见 ZIP 内 EXPORT_MANIFEST.json。此包不是完整环境备份。\n'
                    f'下载路径（加在 ComfyUI 服务地址后）：/view?{query}')
         return {'ui': {'text': [message], 'custom_nodes_archive': [filename]}, 'result': (message,)}
