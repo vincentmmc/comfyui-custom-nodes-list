@@ -95,8 +95,12 @@ class CustomNodesFileList:
         return {"ui": {"text": [text]}, "result": (text,)}
 
 
-NODE_CLASS_MAPPINGS = {"CustomNodesFileList": CustomNodesFileList}
-NODE_DISPLAY_NAME_MAPPINGS = {"CustomNodesFileList": "打印自定义节点文件列表"}
+from .archive_nodes import CustomNodesArchive
+
+NODE_CLASS_MAPPINGS = {"CustomNodesFileList": CustomNodesFileList,
+                       "CustomNodesArchive": CustomNodesArchive}
+NODE_DISPLAY_NAME_MAPPINGS = {"CustomNodesFileList": "打印自定义节点文件列表",
+                               "CustomNodesArchive": "打包下载全部 custom_nodes"}
 WEB_DIRECTORY = "./web"
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
