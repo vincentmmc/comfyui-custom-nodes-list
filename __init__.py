@@ -96,13 +96,16 @@ class CustomNodesFileList:
 
 
 from .archive_nodes import CustomNodesArchive
+from .path_archive import ServerPathArchive
 from .restore_group import register_routes
 
 register_routes()
 
 NODE_CLASS_MAPPINGS = {"CustomNodesFileList": CustomNodesFileList,
+                       "ServerPathArchive": ServerPathArchive,
                        "CustomNodesArchive": CustomNodesArchive}
 NODE_DISPLAY_NAME_MAPPINGS = {"CustomNodesFileList": "打印自定义节点文件列表",
+                               "ServerPathArchive": "检查服务器路径并打包下载",
                                "CustomNodesArchive": "打包下载全部 custom_nodes"}
 WEB_DIRECTORY = "./web"
 

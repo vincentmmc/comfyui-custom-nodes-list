@@ -21,6 +21,20 @@
 
 验证：`python -m unittest discover -s tests -p test_restore.py -v`，以及 `node tests/test_restore.mjs`。
 
+## 检查服务器路径并打包下载
+
+搜索 **检查服务器路径并打包下载**（`ServerPathArchive`），在 `server_path` 填入服务器上的绝对文件路径或文件夹路径，然后运行该节点。
+
+- Linux 示例：`/home/ComfyUI/input/example.png` 或 `/home/ComfyUI/custom_nodes/some_plugin`；Windows 示例：`D:\ComfyUI\input`。路径属于 ComfyUI 服务器，不是浏览器所在电脑；不支持 HTTP URL。
+- 路径存在且可读取时创建 ZIP；目录递归打包并保留目录结构和空文件夹。**不按文件名或扩展名过滤**，所选目录内的配置、隐藏文件和模型也会包含。请仅选择你要下载的路径。
+- 跳过符号链接、Windows 重解析点和特殊文件，ZIP 根目录的 `EXPORT_REPORT_*.json` 记录跳过项。直接指定链接时会提示填写真实路径。
+- 默认单文件上限 1024 MiB、总大小上限 2048 MiB，可分别调整至 65536 MiB；超过上限或读取失败时删除未完成的 ZIP，不提供残缺下载。
+- 输出 `exists`（路径是否存在）、`status`（结果说明）和 `download_url`（相对于 ComfyUI 服务地址的 `/view?...` 链接）。`exists=True` 不等于打包成功；应检查下载链接是否非空。检查权限不足时以状态说明为准。
+- 节点内显示可点击下载链接；ZIP 保存到 ComfyUI output 目录，每次运行创建新文件，旧文件需自行清理。打包 output 本身时不会包含本次正在生成的 ZIP。
+- 使用现有 `/view` 下载接口，访问权限与 ComfyUI 输出文件相同，无新增任意路径 HTTP 下载接口。
+
+更新后需重启 ComfyUI 并刷新页面。此功能只依赖 Python 标准库。
+
 ## 打包下载全部 custom_nodes
 
 更新本插件并重启 ComfyUI、刷新页面后，搜索 **打包下载全部 custom_nodes**（`CustomNodesArchive`）。
@@ -48,6 +62,7 @@ Git 安装地址：https://github.com/vincentmmc/comfyui-custom-nodes-list
    ComfyUI/custom_nodes/comfyui-custom-nodes-list/
        __init__.py
        archive_nodes.py
+       path_archive.py
        restore_group.py
        decode_hidden_json.py
        requirements.txt

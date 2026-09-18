@@ -5,7 +5,8 @@ import { ComfyWidgets } from "../../scripts/widgets.js";
 app.registerExtension({
     name: "custom_nodes_file_list.archive",
     nodeCreated(node) {
-        if (node.comfyClass !== "CustomNodesArchive") return;
+        if (!["CustomNodesArchive", "ServerPathArchive"].includes(node.comfyClass)) return;
+        const isPathArchive = node.comfyClass === "ServerPathArchive";
         const status = ComfyWidgets.STRING(node, "archive_status", ["STRING", { multiline: true }], app).widget;
         status.inputEl.readOnly = true;
         status.options = { ...status.options, serialize: false };
@@ -20,11 +21,12 @@ app.registerExtension({
         node.onExecuted = function (message) {
             original?.apply(this, arguments);
             status.value = (message?.text ?? []).join("\n");
-            const filename = message?.custom_nodes_archive?.[0];
-            if (typeof filename === "string" && /^custom_nodes_[A-Za-z0-9_]+\.zip$/.test(filename)) {
+            const filename = (isPathArchive ? message?.server_path_archive : message?.custom_nodes_archive)?.[0];
+            const pattern = isPathArchive ? /^server_path_[a-f0-9]{32}\.zip$/ : /^custom_nodes_[A-Za-z0-9_]+\.zip$/;
+            if (typeof filename === "string" && pattern.test(filename)) {
                 link.href = api.apiURL("/view?" + new URLSearchParams({ filename, type: "output" }));
                 link.download = filename;
-                link.textContent = "下载 custom_nodes ZIP（点击保存）";
+                link.textContent = isPathArchive ? "下载指定路径 ZIP（点击保存）" : "下载 custom_nodes ZIP（点击保存）";
             } else {
                 link.removeAttribute("href");
                 link.textContent = "没有可下载的压缩包";
