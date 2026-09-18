@@ -1,6 +1,25 @@
 # ComfyUI 自定义节点文件列表
 
-在 **ComfyUI 所在服务器** 列出配置的 `custom_nodes` 目录。无第三方 Python 依赖。
+在 **ComfyUI 所在服务器** 列出配置的 `custom_nodes` 目录，并提供打包下载和隐藏节点组还原功能。文件列表与打包功能无第三方 Python 依赖；还原功能需要 `cryptography`。
+
+## 还原隐藏节点组为普通节点
+
+1. 将新版插件文件夹上传到运行 ComfyUI 的服务器，覆盖旧版插件文件。
+2. 使用 **ComfyUI 自己的 Python 环境** 执行 `python -m pip install -r requirements.txt`（在本插件目录运行）。
+3. 重启 ComfyUI，刷新页面（必要时 Ctrl+F5）。
+4. 在主画布右键点击 `LamGroupNode`（通常显示为 `GroupNode`，也可能被重命名），选择 **还原成普通节点（含嵌套组）**。
+
+服务器在 `/custom_nodes_list/restore_lam_group` 解密并生成展开计划，不执行内部节点，不使用 `/wanaq/encipher`。浏览器创建普通节点、恢复参数、内部连线与外部输入输出，最后移除原隐藏组。嵌套的 `LamGroupNode` 自动递归展开，节点按依赖关系排列；原始位置、颜色、分组未保存在密文中，无法恢复。只恢复原执行逻辑中可从导出端口追溯到的节点，避免启用原来未参与执行的节点。
+
+- 支持当前 `ComfyUI_GroupNode` 的内置密钥格式；AES-GCM 认证失败会停止，不绕过完整性校验。
+- 每次替换前自动下载 `before_restore_时间戳.json` 工作流备份。失败时会尝试恢复原工作流；若浏览器自动恢复失败，可手动导入备份。
+- 缺少节点类型、参数名称不兼容或连线失败时明确报错，不会静默跳过。仍需安装内部节点对应的插件与模型。
+- 连接期间第三方节点可能调整动态端口，插件会检查最终连接是否保留；不保证适配所有第三方节点的自定义控件和动态端口行为。
+- 暂不支持 ComfyUI 原生子图内部的隐藏组；Bypass 状态的组需先取消 Bypass。静音组展开后保持静音。
+- 还原不需要运行工作流；解密 JSON 不包含 `eval`、`exec` 或模型调用。
+- 如只需检查数据，可使用独立脚本：`python decode_hidden_json.py workflow.json --node-id 81 -o decoded.json`；也支持输入仅包含密文的 TXT。
+
+验证：`python -m unittest discover -s tests -p test_restore.py -v`，以及 `node tests/test_restore.mjs`。
 
 ## 打包下载全部 custom_nodes
 
@@ -29,10 +48,15 @@ Git 安装地址：https://github.com/vincentmmc/comfyui-custom-nodes-list
    ComfyUI/custom_nodes/comfyui-custom-nodes-list/
        __init__.py
        archive_nodes.py
+       restore_group.py
+       decode_hidden_json.py
+       requirements.txt
        README.md
        web/
            file_list.js
            archive_download.js
+           restore_group.js
+           restore_plan.js
    ```
 
 3. 重启远程 ComfyUI 服务，然后刷新浏览器页面（必要时 Ctrl+F5）。

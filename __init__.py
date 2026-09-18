@@ -96,6 +96,9 @@ class CustomNodesFileList:
 
 
 from .archive_nodes import CustomNodesArchive
+from .restore_group import register_routes
+
+register_routes()
 
 NODE_CLASS_MAPPINGS = {"CustomNodesFileList": CustomNodesFileList,
                        "CustomNodesArchive": CustomNodesArchive}
