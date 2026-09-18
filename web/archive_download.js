@@ -32,6 +32,10 @@ app.registerExtension({
                 link.textContent = "没有可下载的压缩包";
             }
             this.setDirtyCanvas(true, true);
+            const resolved = message?.server_path_resolved?.[0];
+            if (isPathArchive && typeof resolved === "string" && resolved && !filename) {
+                window.prompt("已解析真实目标，本次未打包。复制此路径到 server_path 后再次运行：", resolved);
+            }
         };
         node.setSize([560, 360]);
     },

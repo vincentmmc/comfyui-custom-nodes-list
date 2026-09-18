@@ -1,7 +1,11 @@
 import importlib.util
+import errno
 import json
+import os
 from pathlib import Path
 import sys
+import stat
+import subprocess
 import tempfile
 import types
 import unittest
@@ -104,6 +108,63 @@ class PathArchiveTests(unittest.TestCase):
             self.assertNotIn('folder/link', archive.namelist())
             report = json.loads(archive.read(next(n for n in archive.namelist() if n.startswith('EXPORT_REPORT_'))))
             self.assertEqual(len(report['skipped']), 1)
+
+    def test_input_file_link_reports_target_without_archiving(self):
+        target = self.root / 'real.txt'
+        target.write_text('actual content')
+        alias = self.root / 'alias'
+        original_stat, original_resolve = Path.lstat, Path.resolve
+        def lstat(path):
+            return types.SimpleNamespace(st_mode=stat.S_IFLNK) if path == alias else original_stat(path)
+        def resolve(path, *args, **kwargs):
+            return target if path == alias else original_resolve(path, *args, **kwargs)
+        with patch.object(Path, 'lstat', lstat), patch.object(Path, 'resolve', resolve):
+            result = self.node.pack(str(alias))
+        self.assertIn(str(alias), result['result'][1])
+        self.assertIn(str(target), result['result'][1])
+        self.assertEqual(result['ui']['server_path_resolved'], [str(target)])
+        self.assertEqual(result['result'][2], '')
+        self.assertFalse(self.output.exists())
+        with self.archive(self.node.pack(str(target))) as archive:
+            self.assertEqual(archive.read('real.txt'), b'actual content')
+
+    def test_input_link_resolution_errors(self):
+        alias = self.root / 'alias'
+        for error, expected in [(FileNotFoundError(), '目标不存在'),
+                                (RuntimeError(), '循环链接'),
+                                (OSError(errno.ELOOP, 'loop'), '循环链接'),
+                                (PermissionError('denied'), '权限不足')]:
+            with self.subTest(error=type(error).__name__):
+                with patch.object(Path, 'lstat', return_value=types.SimpleNamespace(st_mode=stat.S_IFLNK)), \
+                        patch.object(Path, 'resolve', side_effect=error):
+                    result = self.node.pack(str(alias))
+                self.assertTrue(result['result'][0])
+                self.assertIn(expected, result['result'][1])
+                self.assertEqual(result['result'][2], '')
+        self.assertFalse(self.output.exists())
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows junction test')
+    def test_real_windows_junction(self):
+        target = self.root / 'target'
+        target.mkdir()
+        (target / 'content.txt').write_text('junction content')
+        alias = self.root / 'junction'
+        environment = dict(os.environ, ARCHIVE_TEST_ALIAS=str(alias), ARCHIVE_TEST_TARGET=str(target))
+        subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command',
+                        'New-Item -ItemType Junction -Path $env:ARCHIVE_TEST_ALIAS -Target $env:ARCHIVE_TEST_TARGET -ErrorAction Stop | Out-Null'],
+                       env=environment, check=True, capture_output=True,
+                       creationflags=subprocess.CREATE_NO_WINDOW)
+        try:
+            result = self.node.pack(str(alias))
+            self.assertIn('真实目标', result['result'][1])
+            self.assertEqual(result['ui']['server_path_resolved'], [str(target)])
+            self.assertEqual(result['result'][2], '')
+            self.assertFalse(self.output.exists())
+            with self.archive(self.node.pack(str(target))) as archive:
+                self.assertEqual(archive.read('target/content.txt'), b'junction content')
+        finally:
+            # Remove only the junction entry, never recurse into its target.
+            alias.rmdir()
 
 
 if __name__ == '__main__':

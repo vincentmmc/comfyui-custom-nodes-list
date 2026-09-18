@@ -1,5 +1,6 @@
 """Archive a user-selected absolute server path for download via ComfyUI /view."""
 import json
+import errno
 import os
 from pathlib import Path
 import stat
@@ -29,7 +30,7 @@ class ServerPathArchive:
     FUNCTION = 'pack'
     CATEGORY = '工具/文件列表'
     OUTPUT_NODE = True
-    DESCRIPTION = '检查服务器绝对路径并打包文件或目录。递归保留普通文件，不按扩展名过滤；跳过链接。'
+    DESCRIPTION = '检查服务器绝对路径。输入链接时仅显示真实目标供复制；输入真实文件或目录时打包下载。'
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
@@ -38,10 +39,14 @@ class ServerPathArchive:
     def pack(self, server_path, max_total_mb=2048, max_file_mb=1024):
         exists = False
         temporary = None
+        resolution = ''
+        resolved_target = ''
 
         def result(message, filename=''):
+            message = resolution + message
             url = '/view?' + urlencode({'filename': filename, 'type': 'output'}) if filename else ''
-            return {'ui': {'text': [message], 'server_path_archive': [filename]},
+            return {'ui': {'text': [message], 'server_path_archive': [filename],
+                           'server_path_resolved': [resolved_target]},
                     'result': (exists, message, url)}
 
         try:
@@ -58,11 +63,28 @@ class ServerPathArchive:
             except FileNotFoundError:
                 return result(f'路径不存在：{path}')
             exists = True
+            requested_path = path
+            try:
+                path = path.resolve(strict=True)
+            except FileNotFoundError:
+                return result(f'输入路径存在，但链接目标不存在或解析期间路径已消失：{requested_path}')
+            except RuntimeError:
+                return result(f'无法解析真实目标，可能存在循环链接：{requested_path}')
+            except OSError as exc:
+                if exc.errno == errno.ELOOP:
+                    return result(f'无法解析真实目标，存在循环链接或链接层级过多：{requested_path}')
+                return result(f'无法解析真实目标（权限不足或重解析点不可访问）：{requested_path}\n{exc}')
+            input_is_link = is_link(info) or path != Path(os.path.abspath(requested_path))
+            if input_is_link:
+                resolution = f'输入路径：{requested_path}\n真实目标：{path}\n'
+            info = path.lstat()
             if is_link(info):
-                return result('路径存在，但它是符号链接或重解析点；请填写真实目标路径。')
+                return result('该重解析点未能解析为普通文件或目录，请检查挂载或云文件状态。')
             if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
                 return result('路径存在，但不是普通文件或文件夹。')
-            path = path.resolve(strict=True)
+            if input_is_link:
+                resolved_target = str(path)
+                return result('已解析真实目标，本次未打包。请复制真实目标到 server_path，再运行以打包下载。')
             total_limit = max(1, min(65536, int(max_total_mb))) * 1024**2
             file_limit = max(1, min(65536, int(max_file_mb))) * 1024**2
             output = Path(folder_paths.get_output_directory()).resolve()
@@ -73,7 +95,8 @@ class ServerPathArchive:
             fd, temporary = tempfile.mkstemp(prefix='.server_path_', suffix='.part', dir=output)
             os.close(fd)
             temporary = Path(temporary)
-            report = {'source': str(path), 'files': 0, 'source_bytes': 0, 'skipped': []}
+            report = {'requested_source': str(requested_path), 'source': str(path),
+                      'files': 0, 'source_bytes': 0, 'skipped': []}
             visited = 0
             root = path if path.is_dir() else path.parent
 

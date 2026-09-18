@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 let extension;
 const elements = [];
+const prompts = [];
+globalThis.window = { prompt: (...args) => { prompts.push(args); return '/ignored/edit'; } };
 globalThis.document = { createElement: () => {
     const item = { style: {}, append() {}, removeAttribute(name) { delete this[name]; } };
     elements.push(item);
@@ -27,5 +29,11 @@ for (const [type, key, filename] of [
     assert.equal(link.href, undefined);
     node.onExecuted({ text: [], [key]: ['../private.zip'] });
     assert.equal(link.href, undefined);
+    if (type === 'ServerPathArchive') {
+        node.onExecuted({ text: ['resolved'], server_path_archive: [''], server_path_resolved: ['/real/target'] });
+        assert.equal(prompts.length, 1);
+        assert.equal(prompts[0][1], '/real/target');
+        assert.equal(link.href, undefined);
+    }
 }
-console.log('PASS: path archive and existing archive download links, failure clears old URL, invalid filename rejected');
+console.log('PASS: download links, failure clears old URL, invalid filename rejected, resolved path shown in copy dialog without download');
